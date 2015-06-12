@@ -15,54 +15,59 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-// #include <stdbool.h>
 #include <limits.h>
 #include "match/kdtree.h"
 #include "core/arraydef.h"
 #include "core/ma.h"
 
 #define UNDEF ULONG_MAX
+#define ARR_INCR 256
 GT_DECLAREARRAYSTRUCT(GtKdtreeNode);
 
 struct GtKdtree
 {
   GtUword dimension;
   GtArrayGtKdtreeNode *nodes;
-  int (* cmp)(GtKdtreeNode *, GtKdtreeNode *);
+  int (* cmp)(const void *, const void *, GtUword);
 };
 
 struct GtKdtreeNode {
   GtUword id_self;
   GtUword id_low;
   GtUword id_high;
-  void *keys;
+  void *key;
   void *value;
 };
 
-GtKdtree *gt_kdtree_new(void)
-{
-  GtKdtree *kdtree;
-  kdtree = gt_malloc(sizeof (GtKdtree));
-  kdtree->dimension = 0;
-  GT_INITARRAY(kdtree->nodes, GtKdtreeNode);
-  return kdtree;
-}
+/* Constructors and Destructors for GtKdtree and GtKdtreeNode */
 
-GtKdtreeNode *gt_kdtreenode_new()
+GtKdtreeNode *gt_kdtreenode_new(const void *key, const void *value)
 {
   GtKdtreeNode *kdtreenode;
   kdtreenode = gt_malloc(sizeof (GtKdtreeNode));
-  kdtreenode->id_self = 0;
+  kdtreenode->id_self = UNDEF;
   kdtreenode->id_high = UNDEF;
   kdtreenode->id_low = UNDEF;
+  kdtreenode->key = key;
+  kdtreenode->value = value;
 }
 
 void gt_kdtreenode_delete(GtKdtreeNode *kdtreenode)
 {
   if (kdtreenode != NULL) {
-    gt_free(kdtreenode->keys);
-    gt_free(kdtreenode->value);
+    gt_free(kdtreenode);
   }
+}
+
+GtKdtree *gt_kdtree_new(GtUword dimension,
+                        int (* cmp)(const void *, const void *, GtUword))
+{
+  GtKdtree *kdtree;
+  kdtree = gt_malloc(sizeof (GtKdtree));
+  kdtree->dimension = dimension;
+  GT_INITARRAY(kdtree->nodes, GtKdtreeNode);
+  kdtree->cmp = (* cmp)(const void *, const void *, GtUword);
+  return kdtree;
 }
 
 void gt_kdtree_delete(GtKdtree *kdtree)
@@ -71,49 +76,74 @@ void gt_kdtree_delete(GtKdtree *kdtree)
   gt_free(kdtree);
 }
 
+/* KdtreeNode methods */
+
+void *gt_kdtreenode_value(const GtKdtreeNode *kdtreenode)
+{
+  gt_assert(kdtreenode);
+  return kdtreenode->value;
+}
+
+/* Kdtree methods */
+
 GtUword gt_kdtree_size(const GtKdtree *kdtree)
 {
   return kdtree->nodes->nextfreeGtKdtreeNode;
 }
 
-GtKdtreeNode *gt_kdtree_get(const GtKdtree *kdtree, GtUword id)
+GtKdtreeNode *gt_kdtree_get(const GtKdtree *kdtree, GtUword node_id)
 {
-  if (id < gt_kdtree_size(kdtree)) {
-    return kdtree->nodes->spaceGtKdtreeNode + id;
+  gt_assert(kdtree);
+  gt_assert(node_id < gt_kdtree_size(kdtree));
+  return kdtree->nodes->spaceGtKdtreeNode + node_id;
+}
+
+bool gt_kdtree_empty(const GtKdtree *kdtree)
+{
+  gt_assert(kdtreenode);
+  if (gt_kdtree_size(kdtree) == 0) {
+    return true;
   } else {
-    return NULL;
+    return false;
   }
 }
 
-GtUword gt_kdtree_insert(GtKdtree *kdtree, GtKdtreeNode *new, GtUword currdim)
+GtUword gt_kdtree_dimension(GtKdtree *kdtree)
 {
-  gt_assert(kdtree && new);
-  GtKdtreeNode *currnode = gt_kdtree_get(kdtree, new->id);
-  if (currnode == NULL) {
+  gt_assert(kdtree);
+  return kdtree->dimension;
+}
+
+/* recursive insertion of a new node (key, value), starting from currid */
+void gt_kdtree_insert_rec(GtKdtree *kdtree, const void *key, const void *value,
+                          GtUword *currid, GtUword currdim)
+{
+  if (*currid == UNDEF) { /* insertion site found */
+    GtKdtreeNode *new = gt_kdtreenode_new(key, value);
+    *currid = new->id_self = gt_kdtree_size(kdtree);
     GT_STOREINARRAY(kdtree->nodes, GtKdtreeNode, ARR_INCR, new);
   } else {
-    int cmpval = kdtree->cmp(new, currnode);
-    if (cmpval == 0) {
-      *(currnode->value) = *(new->value);
-      gt_kdtreenode_delete(new);
+    GtKdtreeNode *currnode = gt_kdtree_get(kdtree, *currid);
+    const int cmpval = cmp(key, currnode->key, currdim);
+    const GtUword nextdim = (currdim + 1) % kdtree->dimension;
+    if (cmpval < 0) {
+      gt_kdtree_insert_rec(kdtree, key, value, &currnode->id_low, nextdim);
     } else if (cmpval > 0) {
-      if (currnode->id_high == UNDEF) {
-        new->id = gt_kdtree_size(kdtree);
-        GT_STOREINARRAY(kdtree->nodes, GtKdtreeNode, ARR_INCR, new);
-      } else {
-        new->id_self = currnode->id_high;
-        gt_kdtree_insert(kdtree, new, (currdim+1)%kdtree->dimension);
-      }
-    } else {
-      if (currnode->id_low == UNDEF) {
-        new->id = gt_kdtree_size(kdtree);
-        GT_STOREINARRAY(kdtree->nodes, GtKdtreeNode, ARR_INCR, new);
-      } else {
-        new->id_self = currnode->id_low;
-        gt_kdtree_insert(kdtree, new, (currdim+1)%kdtree->dimension);
-      }
+      gt_kdtree_insert_rec(kdtree, key, value, &currnode->id_high, nextdim);
+    } else { /* equal keys: overwrite value */
+      gt_kdtreenode_value(currnode) = value;
     }
   }
-  return new->id_self;
-
 }
+
+void gt_kdtree_insert(GtKdtree *kdtree, const void *key, const void *value)
+{
+  gt_assert(kdtree && key && value);
+  GtUword currid = (gt_kdtree_empty(kdtree) ? UNDEF : 0);
+  gt_kdtree_insert_rec(kdtree, key, value, &currid, 0);
+}
+
+GtKdtreeNode *gt_kdtree_find(const GtKdtree *kdtree, const void *key) {
+  return NULL;
+}
+

@@ -18,15 +18,30 @@
 #ifndef KDTREE_H
 #define KDTREE_H
 
+#include <stdbool.h>
+
 typedef struct GtKdtree GtKdtree;
 typedef struct GtKdtreeNode GtKdtreeNode;
 
-GtKdtree *gt_kdtree_new(void);
+GtKdtree *gt_kdtree_new(GtUword dimension,
+                        int (* cmp)(const void *, const void *, GtUword));
 void gt_kdtree_delete(GtKdtree *kdtree);
 
-//GtKdtreeNode *gt_kdtreenode_new(GtUword ndim);
-//void gt_kdtreenode_delete(GtKdtreeNode *kdtreenode);
+/* return a pointer to the value of the specified node */
+void *gt_kdtreenode_value(const GtKdtreeNode *kdtreenode);
 
-GtUword gt_kdtree_insert(GtKdtree *kdtree, GtKdtreeNode *new, GtUword currdim);
+/* return the number of nodes in kdtree */
+GtUword gt_kdtree_size(const GtKdtree *kdtree);
 
+/* return a pointer to the node with specified node_id */
+GtKdtreeNode *gt_kdtree_get(const GtKdtree *kdtree, GtUword node_id);
+
+/* return whether the specified kdtree is empty */
+bool gt_kdtree_empty(const GtKdtree *kdtree);
+
+/* return the dimension of the keys in kdtree */
+GtUword gt_kdtree_dimension(GtKdtree *kdtree);
+
+/* Create and insert a node of key and value into kdtree. */
+void gt_kdtree_insert(GtKdtree *kdtree, const void* key, const void* value);
 #endif
