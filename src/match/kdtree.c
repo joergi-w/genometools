@@ -143,7 +143,29 @@ void gt_kdtree_insert(GtKdtree *kdtree, const void *key, const void *value)
   gt_kdtree_insert_rec(kdtree, key, value, &currid, 0);
 }
 
-GtKdtreeNode *gt_kdtree_find(const GtKdtree *kdtree, const void *key) {
-  return NULL;
+bool *gt_kdtree_find(const GtKdtree *kdtree, const void *key, GtUword *loc) {
+  GtKdtreeNode *kdtreenode;
+  int cmpval;
+  GtUword currdim, nextid = 0;
+  *loc = UNDEF;
+
+  gt_assert(kdtree && key && loc);
+  if (gt_kdtree_empty(kdtree))
+    return false;
+
+  for (currdim = 0; nextid != UNDEF; currdim = (currdim+1)%kdtree->dimension) {
+    *loc = nextid;
+    kdtreenode = gt_kdtree_get(kdtree, *loc);
+    cmpval = cmp(key, kdtreenode->key, currdim);
+    if (cmpval < 0) {
+      nextid = kdtreenode->id_low;
+    } else if (cmpval > 0) {
+      nextid = kdtreenode->id_high;
+    } else { /* exact key match */
+      return true;
+    }
+  }
+  return false;
 }
+
 
