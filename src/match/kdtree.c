@@ -16,12 +16,15 @@
 */
 
 #include <limits.h>
+#include <math.h>
 #include "match/kdtree.h"
 #include "core/arraydef.h"
 #include "core/ma.h"
+#include "core/mathsupport.h"
+#include "extended/prority_queue.h"
 
-#define UNDEF ULONG_MAX
-#define ARR_INCR 256
+#define GT_KDTREE_UNDEF ULONG_MAX
+#define GT_KDTREE_ARRAYINCR 256
 GT_DECLAREARRAYSTRUCT(GtKdtreeNode);
 
 struct GtKdtree
@@ -39,15 +42,20 @@ struct GtKdtreeNode {
   void *value;
 };
 
+struct GtKdtreeQueueElem {
+  GtUword node_id;
+  double priority;
+};
+
 /* Constructors and Destructors for GtKdtree and GtKdtreeNode */
 
 GtKdtreeNode *gt_kdtreenode_new(const void *key, const void *value)
 {
   GtKdtreeNode *kdtreenode;
   kdtreenode = gt_malloc(sizeof (GtKdtreeNode));
-  kdtreenode->id_self = UNDEF;
-  kdtreenode->id_high = UNDEF;
-  kdtreenode->id_low = UNDEF;
+  kdtreenode->id_self = GT_KDTREE_UNDEF;
+  kdtreenode->id_high = GT_KDTREE_UNDEF;
+  kdtreenode->id_low = GT_KDTREE_UNDEF;
   kdtreenode->key = key;
   kdtreenode->value = value;
 }
@@ -84,6 +92,18 @@ void *gt_kdtreenode_value(const GtKdtreeNode *kdtreenode)
   return kdtreenode->value;
 }
 
+double square_dist(void *key_a, void* key_b, GtUword length) {
+  gt_assert(key_a && key_b);
+  GtUword dim;
+  double diff, sum;
+  sum = 0.0;
+  for (dim = 0; dim < length; dim++) {
+    diff = (double)(key_a[dim]) - (double)(key_b[dim]);
+    sum += diff * diff;
+  }
+  return sum;
+}
+
 /* Kdtree methods */
 
 GtUword gt_kdtree_size(const GtKdtree *kdtree)
@@ -118,10 +138,11 @@ GtUword gt_kdtree_dimension(GtKdtree *kdtree)
 void gt_kdtree_insert_rec(GtKdtree *kdtree, const void *key, const void *value,
                           GtUword *currid, GtUword currdim)
 {
-  if (*currid == UNDEF) { /* insertion site found */
+  if (*currid == GT_KDTREE_UNDEF) { /* insertion site found */
     GtKdtreeNode *new = gt_kdtreenode_new(key, value);
     *currid = new->id_self = gt_kdtree_size(kdtree);
-    GT_STOREINARRAY(kdtree->nodes, GtKdtreeNode, ARR_INCR, new);
+    GT_STOREINARRAY(kdtree->nodes, GtKdtreeNode, GT_KDTREE_ARRAYINCR +
+                    1.2*kdtree->nodes->allocatedGtKdtreeNode, new);
   } else {
     GtKdtreeNode *currnode = gt_kdtree_get(kdtree, *currid);
     const int cmpval = cmp(key, currnode->key, currdim);
@@ -139,21 +160,22 @@ void gt_kdtree_insert_rec(GtKdtree *kdtree, const void *key, const void *value,
 void gt_kdtree_insert(GtKdtree *kdtree, const void *key, const void *value)
 {
   gt_assert(kdtree && key && value);
-  GtUword currid = (gt_kdtree_empty(kdtree) ? UNDEF : 0);
+  GtUword currid = (gt_kdtree_empty(kdtree) ? GT_KDTREE_UNDEF : 0);
   gt_kdtree_insert_rec(kdtree, key, value, &currid, 0);
 }
 
-bool *gt_kdtree_find(const GtKdtree *kdtree, const void *key, GtUword *loc) {
+bool *gt_kdtree_find(const GtKdtree *kdtree, const void *key, GtUword *loc)
+{
   GtKdtreeNode *kdtreenode;
   int cmpval;
   GtUword currdim, nextid = 0;
-  *loc = UNDEF;
+  *loc = GT_KDTREE_UNDEF;
 
   gt_assert(kdtree && key && loc);
   if (gt_kdtree_empty(kdtree))
     return false;
 
-  for (currdim = 0; nextid != UNDEF; currdim = (currdim+1)%kdtree->dimension) {
+  for (currdim = 0; nextid != GT_KDTREE_UNDEF; currdim = (currdim+1)%kdtree->dimension) {
     *loc = nextid;
     kdtreenode = gt_kdtree_get(kdtree, *loc);
     cmpval = cmp(key, kdtreenode->key, currdim);
@@ -168,4 +190,60 @@ bool *gt_kdtree_find(const GtKdtree *kdtree, const void *key, GtUword *loc) {
   return false;
 }
 
+/* recursive knn-search, starting from currid */
+void gt_kdtree_knn_rec(const GtKdtree *kdtree, const void *key, GtUword currid, GtUword currdim, GtPriorityQueue *queue)
+{
+  if (currid == GT_KDTREE_UNDEF) { /* no subtree */
+    return;
+  } else {
+    GtUword nextid, nextdim;
+    int cmpval;
+    GtKdtreeNode *currnode = gt_kdtree_get(kdtree, currid);
+    GtKdtreeQueueElem elem = {currid, -square_dist(key, currnode->key)};
 
+    if (gt_priority_queue_is_full(queue)) {
+      if (gt_double_larger_double(elem.priority,
+                                  gt_priority_queue_find_min(queue))) {
+        gt_priority_queue_extract_min(queue);
+        gt_priority_queue_add(queue, &elem);
+      }
+    } else {
+      gt_priority_queue_add(queue, &elem);
+    }
+
+    cmpval = cmp(key, currnode->key, currdim);
+    nextid = (cmpval <= 0) ? currnode->id_low : currnode->id_high;
+    nextdim = (currdim + 1) % kdtree->dimension;
+    gt_kdtree_knn_rec(kdtree, key, nextid, nextdim, queue);
+
+    if (!gt_priority_queue_is_full(queue) || gt_double_larger_double
+        (-gt_priority_queue_find_min(queue),
+         square_dist(key+currdim, currnode->key+currdim, 1))) {
+      /* search other subtree */
+      nextid = (cmpval <= 0) ? currnode->id_high : currnode->id_low;
+      gt_kdtree_knn_rec(kdtree, key, nextid, nextdim, queue);
+    }
+  }
+}
+
+void gt_kdtree_knn(const GtKdtree *kdtree, const void *key, GtUint kvalue,
+                   void *value)
+{
+  GtPriorityQueue *queue;
+  GtKdtreeQueueElem *elem;
+  GtUword currid;
+  gt_assert(kdtree && key && value);
+  if (kvalue < gt_kdtree_size(kdtree) || kvalue == 0) {
+    /* error: not enough entries for k */
+    return NULL;
+  }
+  queue = gt_priority_queue_new(queue_cmp, kvalue);
+  currid = 0;
+  gt_kdtree_knn_rec(kdtree, key, &currid, 0, queue);
+  while (!gt_priority_queue_is_empty(queue)) {
+    elem = (GtKdtreeQueueElem *)gt_priority_queue_extract_min(queue);
+    value = gt_kdtreenode_value(gt_kdtree_get(kdtree, elem.node_id));
+    value++;
+  }
+  gt_priority_queue_delete(queue);
+}

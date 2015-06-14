@@ -53,4 +53,10 @@ void gt_kdtree_insert(GtKdtree *kdtree, const void* key, const void* value);
 
 /* Return whether kdtree contains key. If found, loc is the respective id. */
 bool *gt_kdtree_find(const GtKdtree *kdtree, const void *key, GtUword *loc);
+
+/* Perform a kNN search for the specified key.
+ * The value parameter points to the storage of the k nearest neighbours.
+ */
+void gt_kdtree_knn(const GtKdtree *kdtree, const void *key, GtUint kvalue,
+                   void *value);
 #endif
