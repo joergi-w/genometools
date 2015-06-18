@@ -199,7 +199,8 @@ void gt_kdtree_knn_rec(const GtKdtree *kdtree, const void *key, GtUword currid, 
     GtUword nextid, nextdim;
     int cmpval;
     GtKdtreeNode *currnode = gt_kdtree_get(kdtree, currid);
-    GtKdtreeQueueElem elem = {currid, -square_dist(key, currnode->key)};
+    GtKdtreeQueueElem elem = {currid, -square_dist(key, currnode->key,
+                                                   gt_kdtree_size(kdtree))};
 
     if (gt_priority_queue_is_full(queue)) {
       if (gt_double_larger_double(elem.priority,
