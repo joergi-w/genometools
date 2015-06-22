@@ -17,7 +17,7 @@
 
 #include <limits.h>
 #include <math.h>
-#include "match/kdtree.h"
+#include "extended/kdtree.h"
 #include "core/arraydef.h"
 #include "core/ma.h"
 #include "core/mathsupport.h"
@@ -230,10 +230,11 @@ void gt_kdtree_knn_rec(const GtKdtree *kdtree, const void *key, GtUword currid,
   }
 }
 
-void gt_kdtree_knn(const GtKdtree *kdtree, const void *key, GtUword kvalue,
-                   const void **knn)
+const void **gt_kdtree_knn(const GtKdtree *kdtree, const void *key,
+                           GtUword kvalue)
 {
-  gt_assert(kdtree && key && knn);
+  gt_assert(kdtree && key);
+  const void **knn = gt_malloc(kvalue * sizeof *knn);
   if (kvalue >= gt_kdtree_size(kdtree) && kvalue != 0) {
     GtPriorityQueue *queue = gt_priority_queue_new((GtCompare)gt_double_compare,
                                                    kvalue);
@@ -242,9 +243,11 @@ void gt_kdtree_knn(const GtKdtree *kdtree, const void *key, GtUword kvalue,
       GtKdtreeQueueElem *elem;
       elem = (GtKdtreeQueueElem *)gt_priority_queue_extract_min(queue);
       *knn = gt_kdtreenode_value(gt_kdtree_get(kdtree, elem->node_id));
-      knn = knn + 1;
+      knn++;
     }
     gt_priority_queue_delete(queue);
+    return knn;
   }
+  return NULL;
   /* else error: not enough entries for k */
 }
