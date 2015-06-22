@@ -18,23 +18,26 @@
 #ifndef KDTREE_H
 #define KDTREE_H
 #include <stdbool.h>
+#include "core/types_api.h"
 
 typedef struct GtKdtree GtKdtree;
 typedef struct GtKdtreeNode GtKdtreeNode;
+typedef int (*GtKdtreeCompare)(const void *, const void *, GtUword);
+typedef double (*GtKdtreeAccessFunction)(const void *, GtUword);
 
-/* Create a new kdtree with specified dimension and compare function. 
+/* Create a new kdtree with specified dimension and compare function.
  * The compare function gives a value < 0, if arg1[arg3] <= arg2[arg3];
  *                                    > 0, if arg1[arg3] > arg2[arg3] and
  *                                    = 0, if arg1 = arg2.
  */
-GtKdtree *gt_kdtree_new(GtUword dimension,
-                        int (* cmp)(const void *, const void *, GtUword));
+GtKdtree *gt_kdtree_new(GtUword dimension, GtKdtreeCompare cmp,
+                        GtKdtreeAccessFunction access);
 
 /* Delete the specified kdtree. */
 void gt_kdtree_delete(GtKdtree *kdtree);
 
 /* Return a pointer to the value of the specified node. */
-void *gt_kdtreenode_value(const GtKdtreeNode *kdtreenode);
+const void *gt_kdtreenode_value(const GtKdtreeNode *kdtreenode);
 
 /* Return the number of nodes in kdtree. */
 GtUword gt_kdtree_size(const GtKdtree *kdtree);
@@ -52,11 +55,11 @@ GtUword gt_kdtree_dimension(GtKdtree *kdtree);
 void gt_kdtree_insert(GtKdtree *kdtree, const void* key, const void* value);
 
 /* Return whether kdtree contains key. If found, loc is the respective id. */
-bool *gt_kdtree_find(const GtKdtree *kdtree, const void *key, GtUword *loc);
+bool gt_kdtree_find(const GtKdtree *kdtree, const void *key, GtUword *loc);
 
 /* Perform a kNN search for the specified key.
  * The value parameter points to the storage of the k nearest neighbours.
  */
-void gt_kdtree_knn(const GtKdtree *kdtree, const void *key, GtUint kvalue,
-                   void *value);
+void gt_kdtree_knn(const GtKdtree *kdtree, const void *key, GtUword kvalue,
+                   const void **knn);
 #endif
